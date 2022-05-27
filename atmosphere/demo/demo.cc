@@ -29,12 +29,22 @@
 
 /*<h2>atmosphere/demo/demo.cc</h2>
 
+<details>
+<summary>
+这个文件和 shader <a href="demo.glsl.html">demo.glsl</a> 展示了如何使用
+<a href="../model.h.html">model.h</a> 中提供的 API。它实现了 <code>Demo</code> 类，
+该类的头文件定义在 <a href="demo.h.html">demo.h</a>（注意，接下来的大部分代码是独立于我们的大气模型的
+唯一一部分相关的是 <code>InitModel</code> 方法。）
+</summary>
+
 <p>This file, together with the shader <a href="demo.glsl.html">demo.glsl</a>,
 shows how the API provided in <a href="../model.h.html">model.h</a> can be used
 in practice. It implements the <code>Demo</code> class whose header is defined
 in <a href="demo.h.html">demo.h</a> (note that most of the following code is
 independent of our atmosphere model. The only part which is related to it is the
 <code>InitModel</code> method).
+
+</details>
 */
 
 #include "atmosphere/demo/demo.h"
@@ -54,6 +64,15 @@ namespace atmosphere {
 namespace demo {
 
 /*
+<details>
+<summary>
+我们的 demo 应用渲染了一个简单的场景，由一个纯球体的行星和一个躺在行星上的大（半径为 1km）球体组成。
+该场景通过渲染一个全屏的 quad 来显示，通过一个 "ray tracing"（这里的光线追踪是非常简单的，因为场景只有 2 个球体）
+片段着色器来计算每个像素的颜色。因此，顶点着色器是非常简单的，并还有下列常量。片段着色器则复杂一点，
+定义在另一个文件 <a href="demo.glsl.html">demo.glsl</a>（通过生成的文件 <code>demo.glsl.inc</code> 将其作为字符串字面量
+被 include 到这个文件里）：
+</summary>
+
 <p>Our demo application renders a simple scene made of a purely spherical planet
 and a large sphere (of 1km radius) lying on it. This scene is displayed by
 rendering a full screen quad, with a fragment shader computing the color of each
@@ -62,18 +81,25 @@ only two spheres). The vertex shader is thus very simple, and is provided in the
 following constant. The fragment shader is more complex, and is defined in the
 separate file <a href="demo.glsl.html">demo.glsl</a> (which is included here as
 a string literal via the generated file <code>demo.glsl.inc</code>):
+
+</details>
 */
 
 namespace {
 
 constexpr double kPi = 3.1415926;
+// 日地距离 = 149597870km，太阳半径 = 696300km，
+// 角直径 2*arctan(696300/149597870)=0.009308888847314225
+// 角半径   arctan(696300/149597870)
 constexpr double kSunAngularRadius = 0.00935 / 2.0;
 constexpr double kSunSolidAngle = kPi * kSunAngularRadius * kSunAngularRadius;
 constexpr double kLengthUnitInMeters = 1000.0;
 
 const char kVertexShader[] = R"(
     #version 330
+    // 从 camera frame 到 world space 的变换矩阵（即 GL_MODELVIEW 矩阵的逆）
     uniform mat4 model_from_view;
+    // 从 clip space 到 camera space 的变换矩阵（即 GL_PROJECTION 矩阵的逆）
     uniform mat4 view_from_clip;
     layout(location = 0) in vec4 vertex;
     out vec3 view_ray;
@@ -90,6 +116,13 @@ static std::map<int, Demo*> INSTANCES;
 }  // anonymous namespace
 
 /*
+<details>
+<summary>
+该类的构造函数是非常直接的，且完全独立于我们的大气模型（大气模型通过单独的方法 <code>InitModel</code> 来初始化）。
+该类的主要职责是创建 demo 窗口，设置事件 handler 回调（这样做使得可以使用全局变量 <code>INSTANCES</code> 同时创建多个 Demo 实例），
+还创建了 vertex buffers 和 text renderer，用于渲染场景和 help 消息：
+</summary>
+
 <p>The class constructor is straightforward and completely independent of our
 atmosphere model (which is initialized in the separate method
 <code>InitModel</code>). It's main role is to create the demo window, to set up
@@ -97,6 +130,8 @@ the event handler callbacks (it does so in such a way that several Demo
 instances can be created at the same time, using the <code>INSTANCES</code>
 global variable), and to create the vertex buffers and the text renderer that
 will be used to render the scene and the help messages:
+
+</details>
 */
 
 Demo::Demo(int viewport_width, int viewport_height) :
@@ -166,7 +201,13 @@ Demo::Demo(int viewport_width, int viewport_height) :
 }
 
 /*
+<details>
+<summary>析构函数是非常简单的：
+</summary>
+
 <p>The destructor is even simpler:
+
+</details>
 */
 
 Demo::~Demo() {
@@ -179,10 +220,17 @@ Demo::~Demo() {
 }
 
 /*
+<details>
+<summary>特定于我们的大气模型的“真正的”初始化工作由下列方法完成。
+它从用地球大气参数创建一个大气 <code>Model</code> 实例开始：
+</summary>
+
 <p>The "real" initialization work, which is specific to our atmosphere model,
 is done in the following method. It starts with the creation of an atmosphere
 <code>Model</code> instance, with parameters corresponding to the Earth
 atmosphere:
+
+</details>
 */
 
 void Demo::InitModel() {
@@ -191,6 +239,8 @@ void Demo::InitModel() {
   // summed and averaged in each bin (e.g. the value for 360nm is the average
   // of the ASTM G-173 values for all wavelengths between 360 and 370nm).
   // Values in W.m^-2.
+  // 太阳的照度，值是范围内的平均值，例如第一个是波长在 360nm 到 370nm 的
+  // 平均照度。单位是瓦每平方米
   constexpr int kLambdaMin = 360;
   constexpr int kLambdaMax = 830;
   constexpr double kSolarIrradiance[48] = {
@@ -205,6 +255,7 @@ void Demo::InitModel() {
   // referencespectra/o3spectra2011/index.html for 233K, summed and averaged in
   // each bin (e.g. the value for 360nm is the average of the original values
   // for all wavelengths between 360 and 370nm). Values in m^2.
+  // 233K 的臭氧的横截面积，值是范围内的平均值。单位是平方米
   constexpr double kOzoneCrossSection[48] = {
     1.18e-27, 2.182e-28, 2.818e-28, 6.636e-28, 1.527e-27, 2.763e-27, 5.52e-27,
     8.451e-27, 1.582e-26, 2.316e-26, 3.669e-26, 4.924e-26, 7.752e-26, 9.016e-26,
@@ -215,6 +266,7 @@ void Demo::InitModel() {
     2.534e-26, 1.624e-26, 1.465e-26, 2.078e-26, 1.383e-26, 7.105e-27
   };
   // From https://en.wikipedia.org/wiki/Dobson_unit, in molecules.m^-2.
+  // 多布森单位(DU)是用于衡量大气中臭氧柱状密度的单位，指每平米包含多少个分子？
   constexpr double kDobsonUnit = 2.687e20;
   // Maximum number density of ozone molecules, in m^-3 (computed so at to get
   // 300 Dobson units of ozone - for this we divide 300 DU by the integral of
@@ -284,9 +336,16 @@ void Demo::InitModel() {
   model_->Init();
 
 /*
+<details>
+<summary>然后创建并编译用于渲染 demo 场景的顶点着色器和片段着色器，并和 <code>Model</code>
+的大气着色器链接起来得到最后的 program：
+</summary>
+
 <p>Then, it creates and compiles the vertex and fragment shaders used to render
 our demo scene, and link them with the <code>Model</code>'s atmosphere shader
 to get the final scene rendering program:
+
+</details>
 */
 
   vertex_shader_ = glCreateShader(GL_VERTEX_SHADER);
@@ -318,9 +377,16 @@ to get the final scene rendering program:
   glDetachShader(program_, model_->shader());
 
 /*
+<details>
+<summary>最后，设置该 program 的 uniforms（包含了 <code>Model</code> 的纹理 uniforms，
+因为我们的 demo 应用本身并没有纹理）：
+</summary>
+
 <p>Finally, it sets the uniforms of this program that can be set once and for
 all (in our case this includes the <code>Model</code>'s texture uniforms,
 because our demo app does not have any texture of its own):
+
+</details>
 */
 
   glUseProgram(program_);
@@ -338,20 +404,33 @@ because our demo app does not have any texture of its own):
   }
   glUniform3f(glGetUniformLocation(program_, "white_point"),
       white_point_r, white_point_g, white_point_b);
+  // 小球的中心点位于原点，所以地球中心点位于下方
   glUniform3f(glGetUniformLocation(program_, "earth_center"),
       0.0, 0.0, -kBottomRadius / kLengthUnitInMeters);
+  // sun_size 是 vec2
+  // .x 是半径张角的 tan
+  // .y 半径张角的 cosine
   glUniform2f(glGetUniformLocation(program_, "sun_size"),
       tan(kSunAngularRadius),
       cos(kSunAngularRadius));
 
   // This sets 'view_from_clip', which only depends on the window size.
+  // 这会设置 'view_from_clip'，它只依赖于窗口的 size。
+  // 从 clip space 坐标转换到 view space 坐标，即投影矩阵的逆。
   HandleReshapeEvent(glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));
 }
 
 /*
+<details>
+<summary>
+场景渲染方法只是简单设置相机相位和太阳方向相关的 uniforms，然后绘制一个
+全屏的 quad（和一个可选的辅助消息）。
+</summary>
 <p>The scene rendering method simply sets the uniforms related to the camera
 position and to the Sun direction, and then draws a full screen quad (and
 optionally a help screen).
+
+</details>
 */
 
 void Demo::HandleRedisplayEvent() const {
@@ -420,8 +499,14 @@ void Demo::HandleRedisplayEvent() const {
 }
 
 /*
+<details>
+<summary>其他事件处理方法也很简单，且不与大气模型交互：
+<summary>
+
 <p>The other event handling methods are also straightforward, and do not
 interact with the atmosphere model:
+
+</details>
 */
 
 void Demo::HandleReshapeEvent(int viewport_width, int viewport_height) {

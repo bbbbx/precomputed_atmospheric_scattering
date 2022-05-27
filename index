@@ -8,6 +8,32 @@
 
 <h2>Introduction</h2>
 
+<details>
+<summary>
+本文档是我们的 <a href="https://hal.inria.fr/inria-00288758/en">Precomputed Atmospheric
+Scattering</a> paper 的新实现。该 <a href=
+"https://github.com/ebruneton/precomputed_atmospheric_scattering">新实现</a> 的动机是因为
+<a href=
+"http://evasion.inrialpes.fr/~Eric.Bruneton/PrecomputedAtmosphericScattering2.zip"
+>旧实现：</a>：
+<ul>
+  <li>几乎没有注释和文档，且结果<a href=
+    "http://www.gamedev.net/topic/619745-brunetons-atmospheric-scattering-demystified/"
+    >很难理解</a>和复用，
+  </li>
+  <li>完全没有测试，由于大气散射方程的复杂性导致实现错误的风险很高，
+  </li>
+  <li>在其纹理坐标映射函数中包含临时（ad-hoc）常量，这些常量只适用于地球大气的情况，不能用于其他行星，
+  </li>
+  <li>仅提供了论文中提出的两种选项之一来存储单次米氏散射分量（即直接存储 3 个分量，或仅存储一个分量并用近似值重建其他分量），
+  </li>
+  <li>没有实现论文中提出的光轴（light shaft）算法，
+  </li>
+  <li>使用了与波长无关的地外太阳光谱（一个随机且完全非物理的值“100”），且直接就显示了辐射率，而不是先将它们转换为亮度值（通过 CIE 颜色匹配功能）。
+  </li>
+</ul>
+</summary>
+
 <p>This document presents a new implementation of our
 <a href="https://hal.inria.fr/inria-00288758/en">Precomputed Atmospheric
 Scattering</a> paper. This <a href=
@@ -39,6 +65,44 @@ implementation</a> is motivated by the fact that the
     values (via the CIE color matching functions).
   </li>
 </ul>
+</p>
+
+</details>
+
+<details>
+<summary>
+为了解决这些问题，我们的新实现：
+<ul>
+  <li>使用了更具描述性的函数名和变量名，并添加了大量注释和文档，</li>
+  <li>使用了静态类型检查来验证所有表达式的 <a href=
+    "https://en.wikipedia.org/wiki/Dimensional_analysis#Dimensional_homogeneity"
+    >维度同质性</a>，并使用单元测试来检查更复杂的约束，
+  </li>
+  <li>使用略微改进的纹理坐标映射函数，不再使用临时常量，
+  </li>
+  <li>提供了论文中提出的两种选项来存储单次米氏散射分量（然后在我们的测试中对这两种选项的不同进行比较），
+  </li>
+  <li>实现了论文中提出的部分光轴算法（实现了方程 17 和 18，但没有实现 shadow volume 算法），
+  </li>
+  <li>使用了一个可配置的地外太阳光谱，且
+    <ul>
+      <li>用 <a href="https://arxiv.org/pdf/1612.04336.pdf">A Qualitative
+      and Quantitative Evaluation of 8 Clear Sky Models</a> 中（14.3 节）的方法
+      将光谱辐射率转换为 RGB 亮度值，
+      </li>
+      <li>或用 <a href=
+      "http://www.oskee.wz.cz/stranka/uploads/SCCG10ElekKmoch.pdf">Real-time
+      Spectral Scattering in Large-scale Natural Participating Media</a>
+      （第 4.4 节）中的方法预先计算亮度值而不是光谱辐射率。
+      预计算阶段比上一个选项要慢，但使用相同数量的 GPU 内存。
+      </li>
+    </ul>
+    这个方法的结果与全光谱渲染方法几乎相同的结果，而成本只是其中的一小部分
+    （我们通过将 GPU 结果与全光谱 CPU 渲染进行比较来检查这一点）。
+  </li>
+</ul>
+</summary>
+
 To address these concerns, our <a href=
 "https://github.com/ebruneton/precomputed_atmospheric_scattering">new
 implementation</a>:
@@ -77,13 +141,38 @@ implementation</a>:
     against full spectral CPU renderings).
   </li>
 </ul>
+
+</details>
+
+<details>
+<summary>
+此外，新的实施增加了对臭氧层的支持，以及对空气分子和气溶胶的自定义密度分布的支持。
+</summary>
+
 In addition, the new implementation adds support for the ozone layer, and for
 custom density profiles for air molecules and aerosols.
+
+</details>
+
+<details>
+<summary>
+接下来的小节会解释如何使用这个新的实现，并展示它的结构和文档，还提供关于它的测试的更多细节。
+</summary>
 
 <p>The sections below explain how this new implementation can be used, present
 its structure and its documentation and give more details about its tests.
 
+</details>
+
 <h2>Usage</h2>
+
+
+<details>
+<summary>
+我们的新实现可用于 C++ / OpenGL 应用程序，如 <a href="atmosphere/model.h.html">model.h</a> 中所述，
+以及在 <code>atmosphere/demo</code> 中的 demo 演示。要运行此 demo，只需在主目录中键入 <code>make
+  demo</code>。该演示的 WebGL2 版本也可以 <a href="demo.html">在线</a> 获得。
+</summary>
 
 <p>Our <a href=
 "https://github.com/ebruneton/precomputed_atmospheric_scattering">new
@@ -92,14 +181,26 @@ in <a href="atmosphere/model.h.html">model.h</a>, and as demonstrated in the
 demo in <code>atmosphere/demo</code>. To run this demo, simply type <code>make
 demo</code> in the main directory. A WebGL2 version of this demo is also
 available <a href="demo.html">online</a>.
+</details>
 
+<details>
+<summary>
+此演示的默认设置使用带有臭氧层的真实太阳光谱。要模拟原来实现的设置，可以将太阳光谱设置为“constant”，并关闭臭氧层。
+</summary>
 <p>The default settings of this demo use the real solar spectrum, with an ozone
 layer. To simulate the settings of the original implementation, set the solar
 spectrum to "constant", and turn off the ozone layer.
 
+</details>
+
 <h2>Structure</h2>
 
+<details>
+<summary>
+源代码组织如下：
+</summary>
 <p>The source code is organized as follows:
+</details>
 
 <code><ul>
   <li>atmosphere/<ul>
@@ -113,12 +214,38 @@ spectrum to "constant", and turn off the ozone layer.
   </ul></li>
 </ul></code>
 
+
+<details>
+<summary>最重要的文件位于 <code>atmosphere</code> 目录的 5 个文件。包含实现了我们的大气模型的
+GLSL shaders，并提供了一个 C++ API 来预计算大气纹理并在 OpenGL 应用程序中使用它们。
+此代码不依赖于其他目录的内容，并且是在 GPU 上使用我们的大气模型所需的全部内容。
+</summary>
 <p>The most important files are the 5 files in the <code>atmosphere</code>
 directory. They contain the GLSL shaders that implement our atmosphere model,
 and provide a C++ API to precompute the atmosphere textures and to use them in
 an OpenGL application. This code does not depend on the content of the other
 directories, and is the only piece which is needed in order to use our
 atmosphere model on GPU.
+
+</details>
+
+<details>
+<summary>其他目录提供示例和测试：
+<ul>
+  <li><code>atmosphere/demo</code> 目录是一个小的 C++/OpenGL demo 应用程序，
+  演示了如何使用 <code>atmosphere</code> 中提供的API。这个 demo 的 WebGL2 版本也可以在 <code>webgl</code> 子目录中找到。
+  </li>
+  <li><code>atmosphere/reference</code> 目录提供了一种在 CPU 上执行我们的 GLSL 代码的方法。
+  其主要目的是为 GLSL 着色器提供单元测试，并静态检查所有表达式的<a href=
+  "https://en.wikipedia.org/wiki/Dimensional_analysis#Dimensional_homogeneity"
+  >维度同质性</a>。这个过程在 <a href="#compilation">Tests</a> 节有更详细的解释。
+  此代码还用于使用全光谱渲染在 CPU 上计算参考图像，以评估在 GPU shader 上执行
+  “radiance to RGB luminance”近似转换的准确性。它依赖于外部库，例如  <a
+  href="https://github.com/ebruneton/dimensional_types">dimensional_types</a>（检查维度同质性）和
+  <a href="https://github.com/jrmuizel/minpng">minpng</a>。
+  </li>
+</ul>
+</summary>
 
 <p>The other directories provide examples and tests:
 <ul>
@@ -143,10 +270,20 @@ atmosphere model on GPU.
   </li>
 </ul>
 
+</details>
+
 <h2>Documentation</h2>
+
+
+<details>
+<summary>该文档由一组网页组成，由每个源代码文件中的大量注释生成：
+</summary>
 
 <p>The documentation consists of a set of web pages, generated from the
 extensive comments in each source code file:
+
+</details>
+
 <code><ul>
   <li>atmosphere<ul>
     <li>demo<ul>
@@ -183,7 +320,19 @@ extensive comments in each source code file:
   </ul></li>
 </ul></code>
 
+
 <h2 id="compilation">Tests</h2>
+
+
+<details>
+<summary>为了降低实施错误的风险，执行了两种验证：
+<ul>
+  <li>在编译时通过静态类型检查检查维度同质性，
+  </li>
+  <li>在运行时通过单元测试检查每个函数的行为。
+  </li>
+</ul>
+</summary>
 
 <p>To reduce the risk of implementation errors, two kinds of verifications are
 performed:
@@ -196,6 +345,37 @@ performed:
   <li>the behavior of each function is checked at runtime, via unit tests.
   </li>
 </ul>
+
+</details>
+
+<details>
+<summary>要实现这一点的主要问题是 GLSL 编译器无法检查维度同质性，
+这与 C++ 编译器不同（例如参考 <a href=
+"http://www.boost.org/doc/libs/1_61_0/doc/html/boost_units.html">Boost.Units</a>）。
+我们对这个问题的解决方案是编写我们的 GLSL 代码，使其既可以由 GLSL 编译器编译，也可以由 C++ 编译器编译。为此：
+<ul>
+  <li>我们使用宏来隐藏 GLSL 和 C++ 之间的一些语法差异。
+  例如，我们在 GLSL 中将 <code>OUT(x)</code> 定义为 <code>out x</code>，
+  而在 C++ 中定义为 <code>x&amp;</code>，
+  并在着色器中将输出变量声明为 <code>OUT(<i>SomeType</i>) <i>someName</i></code>。
+  </li>
+  <li>我们在一个单独的文件中定义物理类型，例如 length 或 power，我们提供两个版本：
+    <ul>
+      <li><a href="atmosphere/definitions.glsl.html">GLSL 版本</a>
+        将物理类型定义为预定义类型的别名，例如 <code>float</code>，
+      </li>
+      <li>而 <a href="atmosphere/reference/definitions.h.html">C++ 版本</a>
+        基于 <a href=
+        "https://github.com/ebruneton/dimensional_types">dimensional_types</a> abstractions 来定义物理类型，
+        它被设计成当对不同物理维度的表达式进行 add、subtract 或  compare 的时候，就会产生编译错误。
+      </li>
+    </ul>
+  </li>
+  <li>我们只在 <code>main</code> 函数中使用预定义的 GLSL 变量，例如 <code>gl_FragCoord</code>，
+  这样我们在 C++ 编译时，只需要移除很少的内容（例如 <code>main() { gl_FragColor = Main(gl_FragCoord); }</code>）。
+  </li>
+</ul>
+</summary>
 
 <p>The main issue to implement this is that a GLSL compiler cannot check the
 dimensional homogeneity, unlike a C++ compiler (see for instance <a href=
@@ -232,7 +412,17 @@ For this:
   </li>
 </ul>
 
+</details>
+
+<details>
+<summary>
+由于这种双重 GLSL 和 C++ 编译，GLSL 代码的单元测试可以在 GLSL 或 C++ 中实现。
+我们选择了 C++，因为它更实用。确实，因为与 GLSL 单元测试不同，C++ 单元测试不需要向 GPU 发送数据并读取测试结果。
+</summary>
+
 <p>Thanks to this double GLSL and C++ compilation, the unit tests for the GLSL
 code can then be implemented either in GLSL or in C++. We chose C++ because it
 is much more practical. Indeed, a C++ unit test does not need to send data to
 the GPU and to read back the test result, unlike a GLSL unit test.
+
+</details>

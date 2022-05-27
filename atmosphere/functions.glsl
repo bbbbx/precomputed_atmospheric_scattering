@@ -67,7 +67,13 @@ types and constants which are provided in two versions: a
 be compiled either with a GLSL compiler or with a C++ compiler (see the
 <a href="../index.html">Introduction</a>).
 
+<p>该 GLSL 文件包含了我们的大气模型实现的核心函数。它提供了计算 transmittance、
+单次散射和第二次散射或更高阶的散射、ground irradiance 的函数，还有把它们保存到纹理和从纹理中读回的函数。
+使用了 <a href="definitions.glsl.html">GLSL version</a> 或 <a href="reference/definitions.h.html">C++ version</a>
+提供的物理类型和常量。
+
 <p>The functions provided in this file are organized as follows:
+<p>该文件中提供的函数组织如下：
 <ul>
 <li><a href="#transmittance">Transmittance</a>
 <ul>
@@ -108,6 +114,9 @@ be compiled either with a GLSL compiler or with a C++ compiler (see the
 
 <p>They use the following utility functions to avoid NaNs due to floating point
 values slightly outside their theoretical bounds:
+
+<p>本文件还是用了下列的工具函数来避免由于浮点值略超出其理论范围而导致的 NaNs：
+</p>
 */
 
 Number ClampCosine(Number mu) {
@@ -138,6 +147,10 @@ wavelength, is called the
 following sections describe how we compute it, how we store it in a precomputed
 texture, and how we read it back.
 
+<p>由于空气分子和气溶胶粒子，光从大气中的点 $\bp$ 传播到点 $\bq$，它会被吸收并偏离它的初始方向散射。
+因此，到达点 $\bq$ 的光只有点 $\bp$ 的光的一部分，而这部分光的多少取决于波长，这部分称为 transmittance。
+本节描述如何预计算这个透射率和如何把它读取回来。
+
 <h4 id="transmittance_computation">Computation</h4>
 
 <p>For 3 aligned points $\bp$, $\bq$ and $\br$ inside the atmosphere, in this
@@ -147,6 +160,13 @@ particular, the transmittance between $\bp$ and $\bq$ is the transmittance
 between $\bp$ and the nearest intersection $\bi$ of the half-line $[\bp,\bq)$
 with the top or bottom atmosphere boundary, divided by the transmittance between
 $\bq$ and $\bi$ (or 0 if the segment $[\bp,\bq]$ intersects the ground):
+
+<p>对于大气内 3 个按顺序对齐的点 $\bp$、$\bq$ 和 $\br$，$\bp$ 和 $\br$ 之间的透射率是
+$\bp$ 和 $\bq$ 的透射率与 $\bq$ 和 $\br$ 的透射率的乘积。这样的话，$\bp$ 和 $\bq$ 的透射率
+就是 $\bp$ 和 $\br$ 的透射率除以 $\bq$ 和 $\br$ 的透射率。把 $\br$ 换成半开线段 $[\bp,\bq)$ 和
+大气底部或大气顶部的最近交点 $\bi$，这样把 $\bp$ $\bi$ 的透射率除以 $\bq$ $\bi$ 的透射率，
+即可得到任意两点 $\bp$ $\bq$ 之间的透射率（如果线段 $[\bp,\bq]$ 和地面相交，则 $\bp$ $\bq$ 之间的透射率为 0）：
+</p>
 
 <svg width="340px" height="195px">
   <style type="text/css"><![CDATA[
@@ -195,13 +215,27 @@ $\mu=\bo\bp\cdot\bp\bi/\Vert\bo\bp\Vert\Vert\bp\bi\Vert$. To compute it, we
 first need to compute the length $\Vert\bp\bi\Vert$, and we need to know when
 the segment $[\bp,\bi]$ intersects the ground.
 
+<p>而且，$\bp$ $\bq$ 之间的透射率和 $\bq$ $\bp$ 之间的透射率是一样的。因此，
+只要知道大气内任一点 $\bp$ 到大气顶部 $\bi$ 之间的透射率，即可计算任意点之间的透射率。
+该透射率只依赖于 2 个参数，一个是半径 $r=\Vert\bo\bp\Vert$，另一个是 "view zenith angle" 的余弦，
+$\mu=\bo\bp\cdot\bp\bi/\Vert\bo\bp\Vert\Vert\bp\bi\Vert$。要计算透射率，首先需要计算
+长度 $\Vert\bp\bi\Vert$，然后我们还需要知道线段 $[\bp,\bi] 什么时候和地面相交$。
+</p>
+
 <h5>Distance to the top atmosphere boundary</h5>
+<h5>到大气顶部的距离</h5>
 
 <p>A point at distance $d$ from $\bp$ along $[\bp,\bi)$ has coordinates
 $[d\sqrt{1-\mu^2}, r+d\mu]^\top$, whose squared norm is $d^2+2r\mu d+r^2$.
 Thus, by definition of $\bi$, we have
 $\Vert\bp\bi\Vert^2+2r\mu\Vert\bp\bi\Vert+r^2=r_{\mathrm{top}}^2$,
 from which we deduce the length $\Vert\bp\bi\Vert$:
+
+<p>从 $\bp$ 沿着 $[\bp,\bi)$ 方向，距离为 $d$ 的点的坐标是 $[d\sqrt{1-\mu^2}, r+d\mu]^\top$（二维上的），
+它的平方模是 $d^2+2r\mu d+r^2$。因此，用 $\bi$ 替换这个点，则 $d$ 就是 $\Vert\bp\bi\Vert$，就可以得到
+$\Vert\bp\bi\Vert^2+2r\mu\Vert\bp\bi\Vert+r^2=r_{\mathrm{top}}^2$，然后得到
+长度 $\Vert\bp\bi\Vert$：
+</p>
 */
 
 Length DistanceToTopAtmosphereBoundary(IN(AtmosphereParameters) atmosphere,
@@ -217,6 +251,9 @@ Length DistanceToTopAtmosphereBoundary(IN(AtmosphereParameters) atmosphere,
 <p>We will also need, in the other sections, the distance to the bottom
 atmosphere boundary, which can be computed in a similar way (this code assumes
 that $[\bp,\bi)$ intersects the ground):
+
+<p>我们还需要知道到大气底部的距离，可以用类似的方法来计算（此代码假设 $[\bp,\bi)$ 和地面相交）：
+</p>
 */
 
 Length DistanceToBottomAtmosphereBoundary(IN(AtmosphereParameters) atmosphere,
@@ -230,11 +267,17 @@ Length DistanceToBottomAtmosphereBoundary(IN(AtmosphereParameters) atmosphere,
 
 /*
 <h5>Intersections with the ground</h5>
+<h5>和地面相交</h5>
 
 <p>The segment $[\bp,\bi]$ intersects the ground when
 $d^2+2r\mu d+r^2=r_{\mathrm{bottom}}^2$ has a solution with $d \ge 0$. This
 requires the discriminant $r^2(\mu^2-1)+r_{\mathrm{bottom}}^2$ to be positive,
 from which we deduce the following function:
+
+<p>当 $d \ge 0$ 且 $d^2+2r\mu d+r^2=r_{\mathrm{bottom}}^2$ 有解时，
+线段 $[\bp,\bi]$ 和地面相交。要需要判别式 $r^2(\mu^2-1)+r_{\mathrm{bottom}}^2$
+为正的，这样我们就可以得到判断是否和地面相交的函数：
+</p>
 */
 
 bool RayIntersectsGround(IN(AtmosphereParameters) atmosphere,
@@ -247,6 +290,7 @@ bool RayIntersectsGround(IN(AtmosphereParameters) atmosphere,
 
 /*
 <h5>Transmittance to the top atmosphere boundary</h5>
+<h5>到大气顶部的透射率</h5>
 
 <p>We can now compute the transmittance between $\bp$ and $\bi$. From its
 definition and the
@@ -258,6 +302,14 @@ and the integral of the number density of air molecules that absorb light
 when the segment $[\bp,\bi]$ does not intersect the ground, they can be computed
 numerically with the help of the following auxilliary function (using the <a
 href="https://en.wikipedia.org/wiki/Trapezoidal_rule">trapezoidal rule</a>):
+
+<p>我们现在可以计算 $\bp$ 和 $\bi$ 之间的透射率了。从它的定义和
+<a href="https://en.wikipedia.org/wiki/Beer-Lambert_law">Beer-Lambert law</a>，
+这涉及到沿着线段 $[\bp,\bi]$ 方向的空气分子数密度（number density）的积分、气溶胶数密度的积分和
+会吸收光的空气分子数密度的积分（例如臭氧）。这 3 个积分具有相同的形式，且当线段 $[\bp,\bi]$
+不和地面相交时，它们可以在以下辅助函数的帮助下进行数值计算（使用 <a
+href="https://en.wikipedia.org/wiki/Trapezoidal_rule">trapezoidal rule</a>）：
+</p>
 */
 
 Number GetLayerDensity(IN(DensityProfileLayer) layer, Length altitude) {
@@ -301,6 +353,9 @@ Length ComputeOpticalLengthToTopAtmosphereBoundary(
 /*
 <p>With this function the transmittance between $\bp$ and $\bi$ is now easy to
 compute (we continue to assume that the segment does not intersect the ground):
+
+<p>有了这个函数，$\bp$ 和 $\bi$ 之间的透射率现在很容易计算（我们继续假设该段不与地面相交）：
+</p>
 */
 
 DimensionlessSpectrum ComputeTransmittanceToTopAtmosphereBoundary(
@@ -321,11 +376,17 @@ DimensionlessSpectrum ComputeTransmittanceToTopAtmosphereBoundary(
 
 /*
 <h4 id="transmittance_precomputation">Precomputation</h4>
+<h4>预计算</h4>
 
 <p>The above function is quite costly to evaluate, and a lot of evaluations are
 needed to compute single and multiple scattering. Fortunately this function
 depends on only two parameters and is quite smooth, so we can precompute it in a
 small 2D texture to optimize its evaluation.
+
+<p>上述的这个函数的评估成本相当高，并且需要大量的评估来计算单次和多次散射。
+幸运的是这个函数只依赖于两个参数并且非常平滑，
+所以我们可以在一个小的 2D 纹理中预先计算它来优化它的评估。
+</p>
 
 <p>For this we need a mapping between the function parameters $(r,\mu)$ and the
 texture coordinates $(u,v)$, and vice-versa, because these parameters do not
@@ -337,6 +398,14 @@ function values at the domain boundaries ($0$ and $1$). To avoid this we need
 to store $f(0)$ at the center of texel 0 and $f(1)$ at the center of texel
 $n-1$. This can be done with the following mapping from values $x$ in $[0,1]$ to
 texture coordinates $u$ in $[0.5/n,1-0.5/n]$ - and its inverse:
+
+<p>为此，我们需要一个函数参数 $(r,\mu)$ 和纹理坐标  $(u,v)$ 之间的映射，且反之亦然，
+因为这些参数没有相同的单位和取值范围。即使是相同的，保存一个 $[0,1]$ 间隔的函数到
+size 为 $n$ 的纹理中也会在 $0.5/n$, $1.5/n$, ... $(n-0.5)/n$ 处采样该函数，因为
+纹理样本是位于纹素中心点的。因此，该纹理只会给我们在域边界 ($0$ and $1$) 处的外推（extrapolated）函数值。
+为了避免这种情况，我们需要保存 $f(0)$ 到纹理 0 的中心点，而在纹素 $n-1$ 的中心保存 $f(1)$。
+可以通过下列的映射来完成将 $[0,1]$ 范围的 x 映射到 $[0.5/n,1-0.5/n]$ 范围的纹理坐标 $u$，反之亦然：
+</p>
 */
 
 Number GetTextureCoordFromUnitRange(Number x, int texture_size) {
@@ -365,6 +434,21 @@ maximum values $d_{\mathrm{min}}=r_{\mathrm{top}}-r$ and
 $d_{\mathrm{max}}=\rho+H$ (cf. the notations from the
 <a href="https://hal.inria.fr/inria-00288758/en">paper</a> and the figure
 below):
+
+<p>通过这些函数，我们现在可以将 $(r,\mu)$ 映射到纹理坐标 $(u,v)$，反之亦然，这避免了
+在纹理查找期间的任一 extrapolation。在 <a href=
+"http://evasion.inrialpes.fr/~Eric.Bruneton/PrecomputedAtmosphericScattering2.zip"
+>原始的实现</a> 中，使用了一些特定于地球大气的 ad-hoc 常量来实现这种映射的。
+在这里，我们使用的是一个通用的映射，适用于任何大气，但仍然在地平线附近会有较高的采样率，
+导致不在地平线附近的采样率较低。
+我们改进的映射基于我们在论文中描述的 4D 纹理参数化：我们对 $r$ 还是使用这个映射，但
+对 $\mu$ 使用一种稍微改善的映射（仅考虑 view ray 不与地面相交的情况）。
+更准确地说，我们通过考虑到顶部大气顶部的距离 $d$ 将 $\mu$ 映射到 0 和 1 之间的值 $x_{\mu}$，
+距离的最小值 $d_{\mathrm{min}}=r_{\mathrm{top}}-r$ 和
+最大值 $d_{\mathrm{max}}=\rho+H$
+（参见 <a href="https://hal.inria.fr/inria-00288758/en">paper</a> 中的符号和下图）。
+</p>
+
 
 <svg width="505px" height="195px">
   <style type="text/css"><![CDATA[
@@ -397,6 +481,9 @@ below):
 
 <p>With these definitions, the mapping from $(r,\mu)$ to the texture coordinates
 $(u,v)$ can be implemented as follows:
+
+<p>有了这些定义，从 $(r,\mu)$ 到纹理坐标 $(u,v)$ 的映射
+可以像下面这样实现：
 */
 
 vec2 GetTransmittanceTextureUvFromRMu(IN(AtmosphereParameters) atmosphere,
@@ -422,6 +509,8 @@ vec2 GetTransmittanceTextureUvFromRMu(IN(AtmosphereParameters) atmosphere,
 
 /*
 <p>and the inverse mapping follows immediately:
+<p>还有它的逆映射：
+</p>
 */
 
 void GetRMuFromTransmittanceTextureUv(IN(AtmosphereParameters) atmosphere,
@@ -449,6 +538,9 @@ void GetRMuFromTransmittanceTextureUv(IN(AtmosphereParameters) atmosphere,
 /*
 <p>It is now easy to define a fragment shader function to precompute a texel of
 the transmittance texture:
+
+<p>现在可以很容易定义一个片段着色器函数来预计算透射率纹理的一个纹素了：
+</p>
 */
 
 DimensionlessSpectrum ComputeTransmittanceToTopAtmosphereBoundaryTexture(
@@ -464,10 +556,15 @@ DimensionlessSpectrum ComputeTransmittanceToTopAtmosphereBoundaryTexture(
 
 /*
 <h4 id="transmittance_lookup">Lookup</h4>
+<h4>查找</h4>
 
 <p>With the help of the above precomputed texture, we can now get the
 transmittance between a point and the top atmosphere boundary with a single
 texture lookup (assuming there is no intersection with the ground):
+
+<p>借助上述预计算的纹理，我们现在可以通过单次纹理查找（假设与地面不相交）
+得到一个点与顶部大气顶部之间的透射率：
+</p>
 */
 
 DimensionlessSpectrum GetTransmittanceToTopAtmosphereBoundary(
@@ -488,6 +585,13 @@ points $\bp$ and $\bq$ inside the atmosphere with only two texture lookups
 between $\bp$ and the top atmosphere boundary, divided by the transmittance
 between $\bq$ and the top atmosphere boundary, or the reverse - we continue to
 assume that the segment between the two points does not intersect the ground):
+
+<p>同时，有了 $r_d=\Vert\bo\bq\Vert=\sqrt{d^2+2r\mu d+r^2}$ 和
+$\mu_d=\bo\bq\cdot\bp\bi/\Vert\bo\bq\Vert\Vert\bp\bi\Vert=(r\mu+d)/r_d$，
+位于点 $\bq$ 的 $r$ 和 $\mu$，我们只需要两次纹理查找就可以得到
+大气中任意两个点 $\bp$ 和 $\bq$ 之间的透射率
+（这两点的线段不和地面相交）：
+</p>
 */
 
 DimensionlessSpectrum GetTransmittance(
@@ -526,6 +630,12 @@ very close to the horizon, due to the finite precision and rounding errors of
 floating point operations. And also because the caller generally has more robust
 ways to know whether a ray intersects the ground or not (see below).
 
+<p>如果 $r$ 和 $\mu$ 定义的 ray 和地面相交，其中的 <code>ray_r_mu_intersects_ground</code>
+应该为 true。我们不会用 <code>RayIntersectsGround</code> 来计算它，因为
+对于那些非常靠近地平面的 rays 来说，由于有限的精度和浮点数操作的舍入误差，结果可能是错误的。
+还因为调用者通常有更强大的方法来知道一条 ray 是否与地面相交（见下文）。
+</p>
+
 <p>Finally, we will also need the transmittance between a point in the
 atmosphere and the Sun. The Sun is not a point light source, so this is an
 integral of the transmittance over the Sun disc. Here we consider that the
@@ -533,6 +643,11 @@ transmittance is constant over this disc, except below the horizon, where the
 transmittance is 0. As a consequence, the transmittance to the Sun can be
 computed with <code>GetTransmittanceToTopAtmosphereBoundary</code>, times the
 fraction of the Sun disc which is above the horizon.
+
+<p>最后，我们还需要大气内的点和太阳之间的透射率。因为太阳不是点光源，所以
+这是一个在太阳的 disc 上的透射率积分。在这里，我们考虑整个 disc 的透射率是一个常数，
+除了位于地平面以下，那里的透射率为 0。因此，可以使用 <code>GetTransmittanceToTopAtmosphereBoundary</code>
+乘以太阳 disc 在地平线以上的部分，得到到太阳的透射率。
 
 <p>This fraction varies from 0 when the Sun zenith angle $\theta_s$ is larger
 than the horizon zenith angle $\theta_h$ plus the Sun angular radius $\alpha_s$,
@@ -547,6 +662,19 @@ href="https://en.wikipedia.org/wiki/Circular_segment">circular segment</a> as a
 function of its <a href="https://en.wikipedia.org/wiki/Sagitta_(geometry)"
 >sagitta</a>). Therefore, since $\sin\theta_h=r_{\mathrm{bottom}}/r$, we can
 approximate the transmittance to the Sun with the following function:
+
+<p>当太阳天顶角 $\theta_s$ 大于 地平面天顶角 $\theta_h$ 加上太阳半径张角 $\alpha_s$ 时，
+则到太阳的透射率为 0；当太阳天顶角 $\theta_s$ 小于 地平面天顶角 $\theta_h$ 减去太阳半径张角 $\alpha_s$ 时，
+则到太阳的透射率为 1。或者等价于 $\mu_s=\cos\theta_s$ 小于 
+$\cos(\theta_h+\alpha_s)\approx\cos\theta_h-\alpha_s\sin\theta_h$ 时，和
+$\mu_s$ 大于 $\cos(\theta_h-\alpha_s)\approx\cos\theta_h+\alpha_s\sin\theta_h$ 时。
+而当太阳天顶角位于这两个角度之间时，可见的太阳圆盘部分大概像 smoothstep 一样变化
+（这可以通过画出 <a href="https://en.wikipedia.org/wiki/Circular_segment">圆弧</a> 的面积和它的
+<a href="https://en.wikipedia.org/wiki/Sagitta_(geometry)">sagitta</a> 之间的函数来验证。
+即太阳从地平面慢慢往上升时，能看到的太阳面积）。
+因此，因为 $\sin\theta_h=r_{\mathrm{bottom}}/r$，所以我们可以用下列的函数来
+近似到太阳的透射率：
+</p>
 */
 
 DimensionlessSpectrum GetTransmittanceToSun(
@@ -564,6 +692,7 @@ DimensionlessSpectrum GetTransmittanceToSun(
 
 /*
 <h3 id="single_scattering">Single scattering</h3>
+<h3>单次散射</h3>
 
 <p>The single scattered radiance is the light arriving from the Sun at some
 point after exactly one scattering event inside the atmosphere (which can be due
@@ -572,7 +701,13 @@ computed <a href="#irradiance">separately</a>). The following sections describe
 how we compute it, how we store it in a precomputed texture, and how we read it
 back.
 
+<p>单次散射的辐射度是从太阳来的光在大气中的某点恰好发生一次散射事件之后到达的光
+（这可能是由于空气分子或气溶胶粒子造成的，我们排除了来自地面的反射，<a href="#irradiance">单独计算它</a>）。
+本节描述我们如何计算单次散射，如何把它保存到预计算的纹理里，和如何读取回来。
+</p>
+
 <h4 id="single_scattering_computation">Computation</h4>
+<h4>计算</h4>
 
 <p>Consider the Sun light scattered at a point $\bq$ by air molecules before
 arriving at another point $\bp$ (for aerosols, replace "Rayleigh" with "Mie"

@@ -37,6 +37,14 @@ model. It also provides tabulated values of the <a href=
 <a href="https://en.wikipedia.org/wiki/SRGB">sRGB</a> color spaces (which are
 needed to convert the spectral radiance samples computed by our algorithm to
 sRGB luminance values).
+
+<p>本文件定义了用于我们的大气模型的预计算纹理的 size。本文件还提供了<a href=
+"https://en.wikipedia.org/wiki/CIE_1931_color_space#Color_matching_functions"
+>CIE color matching functions</a> 的表格值和从 <a href=
+"https://en.wikipedia.org/wiki/CIE_1931_color_space">XYZ</a> 转换到
+<a href="https://en.wikipedia.org/wiki/SRGB">sRGB</a> 颜色空间的转换矩阵，
+（将我们的算法计算好的 spectral radiance 样本转换为 sRGB 亮度值时需要）。
+</p>
 */
 
 #ifndef ATMOSPHERE_CONSTANTS_H_

@@ -35,6 +35,11 @@ method per user interface event, and a few fields to store the current rendering
 options, the current camera and Sun parameters, as well as references to the
 atmosphere model and to the GLSL program, vertex buffers and text renderer used
 to render the scene and the help messages:
+
+<p>我们的 demo 应用由单个类组成，它的头文件定义如下。除了构造函数和初始化方法，该类
+对于每个用户接口事件都有一个方法，还有一些字段，用于保存当前渲染选项、当前相机参数、太阳参数、
+对大气模型的引用和对 GLSL program 的引用，vertex buffers 和 text renderer 用于渲染场景和 help 消息：
+</p>
 */
 
 #ifndef ATMOSPHERE_DEMO_DEMO_H_
@@ -63,16 +68,23 @@ class Demo {
  private:
   enum Luminance {
     // Render the spectral radiance at kLambdaR, kLambdaG, kLambdaB.
+    // 渲染位于 kLambdaR、kLambdaG、kLambdaB 的光谱辐射
     NONE,
     // Render the sRGB luminance, using an approximate (on the fly) conversion
     // from 3 spectral radiance values only (see section 14.3 in <a href=
     // "https://arxiv.org/pdf/1612.04336.pdf">A Qualitative and Quantitative
     //  Evaluation of 8 Clear Sky Models</a>).
+    // 使用一个近似的（在运行时）转换，只用 3 个光谱辐射值来渲染 sRGB 亮度（见<a href=
+    // "https://arxiv.org/pdf/1612.04336.pdf">A Qualitative and Quantitative
+    //  Evaluation of 8 Clear Sky Models</a> 的 14.3 节）。
     APPROXIMATE,
     // Render the sRGB luminance, precomputed from 15 spectral radiance values
     // (see section 4.4 in <a href=
     // "http://www.oskee.wz.cz/stranka/uploads/SCCG10ElekKmoch.pdf">Real-time
     //  Spectral Scattering in Large-scale Natural Participating Media</a>).
+    // 使用 15 个预计算的光谱辐射值（见 <a href=
+    // "http://www.oskee.wz.cz/stranka/uploads/SCCG10ElekKmoch.pdf">Real-time
+    //  Spectral Scattering in Large-scale Natural Participating Media</a>4.4 节）来渲染 sRGB 亮度。
     PRECOMPUTED
   };
 
