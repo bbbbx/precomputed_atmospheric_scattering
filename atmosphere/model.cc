@@ -29,6 +29,15 @@
 
 /*<h2>atmosphere/model.cc</h2>
 
+<details>
+<summary>本文件实现了 <a href="model.h.html">API of our atmosphere
+model</a>。它的主要职责是预计算 transmittance、scattering 和 irradiance 纹理。在
+<a href="functions.glsl.html">functions.glsl</a> 中提供了预计算它们的方法，但这些方法还不充足。
+这些方法必须在完整的 shader 和 program 中使用才行，且这些方法必须如
+<a href="https://hal.inria.fr/inria-00288758/en">paper</a> 4.1 中所描述的那样，
+用正确的输入和输出纹理（通过 framebuffer 对象），且按正确的顺序来调用，才能预计算各阶的 scattering。
+这就就是下面这些代码的作用。
+</summary>
 <p>This file implements the <a href="model.h.html">API of our atmosphere
 model</a>. Its main role is to precompute the transmittance, scattering and
 irradiance textures. The GLSL functions to precompute them are provided in
@@ -39,6 +48,7 @@ must be called in the correct order, with the correct input and output textures
 described in Algorithm 4.1 of
 <a href="https://hal.inria.fr/inria-00288758/en">our paper</a>. This is the role
 of the following C++ code.
+</details>
 */
 
 #include "atmosphere/model.h"
@@ -53,6 +63,15 @@ of the following C++ code.
 #include "atmosphere/constants.h"
 
 /*
+<details>
+<summary>本文件由 3 部分组成：
+<ul>
+<li><a href="#shaders">第一部分</a>定义了用来预计算大气纹理的的 shaders，</li>
+<li><a href="#utilities">第二部分</a>提供了用来编译 shader、创建纹理和绘制 quads 等等的工具类或函数，</li>
+<li><a href="#implementation">第三部分</a>是使用前两部分提供的工具来实现 <code>Model</code> 类。</li>
+</ul>
+</summary>
+
 <p>The rest of this file is organized in 3 parts:
 <ul>
 <li>the <a href="#shaders">first part</a> defines the shaders used to precompute
@@ -63,10 +82,19 @@ functions used to compile shaders, create textures, draw quads, etc,</li>
 implementation of the <code>Model</code> class, using the above tools.</li>
 </ul>
 
+</details>
+
+
 <h3 id="shaders">Shader definitions</h3>
+
+<details>
+<summary>为了预计算一个纹理，我们把它 attach 到一个 framebuffer 对象（FBO）上，
+然后我们渲染一个 full quad 到该 FBO 上。为此，我们需要一个基本的顶点着色器：
+</summary>
 
 <p>In order to precompute a texture we attach it to a framebuffer object (FBO)
 and we render a full quad in this FBO. For this we need a basic vertex shader:
+</details>
 */
 
 namespace atmosphere {
@@ -81,8 +109,14 @@ const char kVertexShader[] = R"(
     })";
 
 /*
+<details>
+<summary>还有一个基础的几何着色器（只用于 3D 纹理，用于指定我们想要写入 3D 纹理的哪一层，<code>gl_Layer</code> 指定）：
+</summary>
+
 <p>a basic geometry shader (only for 3D textures, to specify in which layer we
 want to write):
+
+</details>
 */
 
 const char kGeometryShader[] = R"(
@@ -104,6 +138,16 @@ const char kGeometryShader[] = R"(
     })";
 
 /*
+<details>
+<summary>还有一个片段着色器，它的具体代码是什么取决于我们要计算的是哪个纹理。
+该片段着色器简单地把 <a href="functions.glsl.html">functions.glsl</a> 的预计算函数包装到了一个完整的着色器中
+（即有一个 <code>main</code> 函数和适当的着色器输入输出声明）。注意，这些字符串必须和 <code>definitions.glsl</code>、
+<code>functions.glsl</code> 连接起来（由生成的 <code>.glsl.inc</code> 提供成 C++ 字符串字面量），还有包含了大气参数的
+<code>ATMOSPHERE</code> 常量，才能真正获得一个完整的着色器。还要注意的是 <code>luminance_from_radiance</code> uniforms：
+它们用于 precomputed illuminance 模式，以便将由 <code>functions.glsl</code> 计算的 radiance 值转换为 luminance 值
+（详情见 <code>Init</code> 方法）。
+</summary>
+
 <p>and a fragment shader, which depends on the texture we want to compute. This
 is the role of the following shaders, which simply wrap the precomputation
 functions from <a href="functions.glsl.html">functions.glsl</a> in complete
@@ -117,6 +161,8 @@ parameters, to really get a complete shader. Note also the
 illuminance mode to convert the radiance values computed by the
 <code>functions.glsl</code> functions to luminance values (see the
 <code>Init</code> method for more details).
+
+</details>
 */
 
 #include "atmosphere/definitions.glsl.inc"
@@ -208,6 +254,14 @@ const char kComputeMultipleScatteringShader[] = R"(
     })";
 
 /*
+<details>
+<summary>我们最终还需要一个着色器来暴露我们的 API，这可以通过调用 
+<a href="functions.glsl.html#rendering">functions.glsl</a> 中对应的函数，
+其中预计算纹理的参数取自 uniform 变量（还有注意在后面函数中的
+*<code>_RADIANCE_TO_LUMINANCE</code> 转换常量：它们在下面的 <a href="#utilities">第二部分</a> 中计算，
+它们的定义被连接到这个 GLSL 代码以获得一个功能完整的着色器）。
+</summary>
+
 <p>We finally need a shader implementing the GLSL functions exposed in our API,
 which can be done by calling the corresponding functions in
 <a href="functions.glsl.html#rendering">functions.glsl</a>, with the precomputed
@@ -216,6 +270,8 @@ texture arguments taken from uniform variables (note also the
 they are computed in the <a href="#utilities">second part</a> below, and their
 definitions are concatenated to this GLSL code to get a fully functional
 shader).
+
+</details>
 */
 
 const char kAtmosphereShader[] = R"(
@@ -282,8 +338,14 @@ const char kAtmosphereShader[] = R"(
 
 /*<h3 id="utilities">Utility classes and functions</h3>
 
+<details>
+<summary>为了编译和连接这些 shaders 到 programs 中和设置它们的 uniforms，我们使用下面的工具类：
+</summary>
+
 <p>To compile and link these shaders into programs, and to set their uniforms,
 we use the following utility class:
+
+</details>
 */
 
 class Program {
@@ -416,7 +478,13 @@ class Program {
 };
 
 /*
+<details>
+<summary>我们还需要一些工具函数来在 GPU 上 allocate 要预计算的纹理：
+</summary>
+
 <p>We also need functions to allocate the precomputed textures on GPU:
+
+</details>
 */
 
 GLuint NewTexture2d(int width, int height) {
@@ -424,12 +492,14 @@ GLuint NewTexture2d(int width, int height) {
   glGenTextures(1, &texture);
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, texture);
+  // 使用 linear filter
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
   // 16F precision for the transmittance gives artifacts.
+  // transmittance 使用 16F 精度的话会有 artifacts。
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0,
       GL_RGBA, GL_FLOAT, NULL);
   return texture;
@@ -441,6 +511,7 @@ GLuint NewTexture3d(int width, int height, int depth, GLenum format,
   glGenTextures(1, &texture);
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_3D, texture);
+  // 使用 linear filter
   glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -456,9 +527,16 @@ GLuint NewTexture3d(int width, int height, int depth, GLenum format,
 }
 
 /*
+<details>
+<summary>一个函数，用于检测 RGB 格式是否是受支持的 renderbuffer color format
+（OpenGL 3.3 Core Profile 规范要求支持 RGBA 格式，但不要求支持 RGB 格式）：
+</summary>
+
 <p>a function to test whether the RGB format is a supported renderbuffer color
 format (the OpenGL 3.3 Core Profile specification requires support for the RGBA
 formats, but not for the RGB ones):
+
+</details>
 */
 
 bool IsFramebufferRgbFormatSupported(bool half_precision) {
@@ -481,8 +559,15 @@ bool IsFramebufferRgbFormatSupported(bool half_precision) {
 }
 
 /*
+<details>
+<summary>和一个以 offscreen framebuffer 的方式来绘制 full screen quad 的函数
+（对每个 color attachment 的 blending 单独地设置了启用或或禁用）：
+</summary>
+
 <p>and a function to draw a full screen quad in an offscreen framebuffer (with
 blending separately enabled or disabled for each color attachment):
+
+</details>
 */
 
 void DrawQuad(const std::vector<bool>& enable_blend, GLuint quad_vao) {
@@ -502,17 +587,33 @@ void DrawQuad(const std::vector<bool>& enable_blend, GLuint quad_vao) {
 }
 
 /*
+<details>
+<summary>最后，我们需要一个工具函数来计算 *<code>_RADIANCE_TO_LUMINANCE</code> 转换常量，
+用于将光谱值转换到 luminance 值。它们是 <a href="https://arxiv.org/pdf/1612.04336.pdf">A
+Qualitative and Quantitative Evaluation of 8 Clear Sky Models</a> 14.3 节中描述的常量 k_r、k_g、k_b。
+</summary>
+
 <p>Finally, we need a utility function to compute the value of the conversion
 constants *<code>_RADIANCE_TO_LUMINANCE</code>, used above to convert the
 spectral results into luminance values. These are the constants k_r, k_g, k_b
 described in Section 14.3 of <a href="https://arxiv.org/pdf/1612.04336.pdf">A
 Qualitative and Quantitative Evaluation of 8 Clear Sky Models</a>.
 
+</details>
+
+<details>
+<summary>计算它们的值需要一个函数的积分乘上一个 CIE color matching function。
+因此，我们首先需要一个能在任意波长内插值任意函数（由一些 samples 指定）和 CIE 颜色匹配函数（由表格的值指定）的函数。
+即下面这两个函数所做的事情：
+</summary>
+
 <p>Computing their value requires an integral of a function times a CIE color
 matching function. Thus, we first need functions to interpolate an arbitrary
 function (specified by some samples), and a CIE color matching function
 (specified by tabulated values), at an arbitrary wavelength. This is the purpose
 of the following two functions:
+
+</details>
 */
 
 constexpr int kLambdaMin = 360;
@@ -552,13 +653,23 @@ double Interpolate(
 }
 
 /*
+<details>
+<summary>然后我们可以实现一个工具函数来计算转换常量 "spectral radiance to
+luminance"（有关它们的定义见 <a
+href="https://arxiv.org/pdf/1612.04336.pdf">A Qualitative and Quantitative
+Evaluation of 8 Clear Sky Models</a> 的 14.3 节）：
+</summary>
+
 <p>We can then implement a utility function to compute the "spectral radiance to
 luminance" conversion constants (see Section 14.3 in <a
 href="https://arxiv.org/pdf/1612.04336.pdf">A Qualitative and Quantitative
 Evaluation of 8 Clear Sky Models</a> for their definitions):
+
+</details>
 */
 
 // The returned constants are in lumen.nm / watt.
+// 返回的常量的单位是 lumen·nm / watt.
 void ComputeSpectralRadianceToLuminanceFactors(
     const std::vector<double>& wavelengths,
     const std::vector<double>& solar_irradiance,
@@ -598,6 +709,14 @@ void ComputeSpectralRadianceToLuminanceFactors(
 
 /*<h3 id="implementation">Model implementation</h3>
 
+<details>
+<summary>有了上面的工具函数和类，我们现在可以实现 <code>Model</code> 类的构造函数了。
+该构造函数会生成 GLSL 代码的一部分，它定义了包含大气参数的 <code>ATMOSPHERE</code> 常量
+（我们使用常量而不是 uniforms 是为了 GLSL 编译器开启 constant folding 和 propagation optimizations），
+然后会和 <a href="functions.glsl.html">functions.glsl</a>、<code>kAtmosphereShader</code> 连接起来。
+该构造函数还 allocates 了预计算的纹理，还有一个用于渲染 full screen quad 的 vertex buffer object。
+</summary>
+
 <p>Using the above utility functions and classes, we can now implement the
 constructor of the <code>Model</code> class. This constructor generates a piece
 of GLSL code that defines an <code>ATMOSPHERE</code> constant containing the
@@ -608,6 +727,8 @@ folding and propagation optimizations in the GLSL compiler), concatenated with
 <code>GetShader</code>. It also allocates the precomputed textures (but does not
 initialize them), as well as a vertex buffer object to render a full screen quad
 (used to render into the precomputed textures).
+
+</details>
 */
 
 Model::Model(
@@ -672,6 +793,11 @@ Model::Model(
   // (because the values are too large), so we store illuminance values divided
   // by MAX_LUMINOUS_EFFICACY instead. This is why, in precomputed illuminance
   // mode, we set SKY_RADIANCE_TO_LUMINANCE to MAX_LUMINOUS_EFFICACY.
+  // 计算常量 SKY_RADIANCE_TO_LUMINANCE 的值。理论上，
+  // 在 precomputed illuminance 模式，它的值是 1（因为预计算的纹理已经包含了 illuminance 值）。
+  // 但是，实际上，在半精度的纹理上存储 illuminance 值会导致 artifacts（因为值太大），
+  // 所以我们将 illuminance 值除以 MAX_LUMINOUS_EFFICACY 后再保存。
+  // 这就是我们在 precomputed illuminance 模式中，将 SKY_RADIANCE_TO_LUMINANCE 设置为 MAX_LUMINOUS_EFFICACY 的原因。
   bool precompute_illuminance = num_precomputed_wavelengths > 3;
   double sky_k_r, sky_k_g, sky_k_b;
   if (precompute_illuminance) {
@@ -681,6 +807,7 @@ Model::Model(
         -3 /* lambda_power */, &sky_k_r, &sky_k_g, &sky_k_b);
   }
   // Compute the values for the SUN_RADIANCE_TO_LUMINANCE constant.
+  // 计算常量 SUN_RADIANCE_TO_LUMINANCE 的值
   double sun_k_r, sun_k_g, sun_k_b;
   ComputeSpectralRadianceToLuminanceFactors(wavelengths, solar_irradiance,
       0 /* lambda_power */, &sun_k_r, &sun_k_g, &sun_k_b);
@@ -688,6 +815,8 @@ Model::Model(
   // A lambda that creates a GLSL header containing our atmosphere computation
   // functions, specialized for the given atmosphere parameters and for the 3
   // wavelengths in 'lambdas'.
+  // 创建一个 GLSL header 的 lambda 函数，它包含了我们的大气计算函数，
+  // 由给定的大气参数和 'lambdas' 参数指定。
   glsl_header_factory_ = [=](const vec3& lambdas) {
     return
       "#version 330\n"
@@ -744,6 +873,7 @@ Model::Model(
   };
 
   // Allocate the precomputed textures, but don't precompute them yet.
+  // Allocate 要预计算的纹理，但还不会进行预计算
   transmittance_texture_ = NewTexture2d(
       TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
   scattering_texture_ = NewTexture3d(
@@ -766,6 +896,7 @@ Model::Model(
       IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT);
 
   // Create and compile the shader providing our API.
+  // 创建和编译提供了 API 的 shader
   std::string shader =
       glsl_header_factory_({kLambdaR, kLambdaG, kLambdaB}) +
       (precompute_illuminance ? "" : "#define RADIANCE_API_ENABLED\n") +
@@ -795,7 +926,13 @@ Model::Model(
 }
 
 /*
+<details>
+<summary>析构函数非常简单：
+</summary>
+
 <p>The destructor is trivial:
+
+</details>
 */
 
 Model::~Model() {
@@ -811,9 +948,29 @@ Model::~Model() {
 }
 
 /*
+<details>
+<summary>Init 方法预计算了大气纹理。它首先会分配它需要的临时资源，
+然后调用 <code>Precompute</code> 来完成真正的预计算，最后销毁临时资源。
+</summary>
+
 <p>The Init method precomputes the atmosphere textures. It first allocates the
 temporary resources it needs, then calls <code>Precompute</code> to do the
 actual precomputations, and finally destroys the temporary resources.
+
+</details>
+
+<details>
+<summary>注意这里有 2 种预计算模式，具体取决于我们想要保存的是 irradiance 值还是 illuminance 值：
+<ul>
+  <li>在 precomputed irradiance 模式下，我们只需简单地用我们 3 个波长（和为 <code>luminance_from_radiance</code>
+    使用的单位矩阵，因为我们不需要从 radiance 转换为 luminance）来调用 <code>Precompute</code>，
+    这 3 个波长由 <code>kLambdaR</code>、<code>kLambdaG</code>、<code>kLambdaB</code> 定义。
+  </li>
+  <li>在 precomputed illuminance 模式下，我们需要为 <code>num_precomputed_wavelengths_</code> 预计算 irradiance，
+    然后对结果积分，乘上 3 个 CIE xyz color matching functions 和 XYZ to sRGB 矩阵，来得到 sRGB illuminance 值。
+  </li>
+</ul>
+</summary>
 
 <p>Note that there are two precomputation modes here, depending on whether we
 want to store precomputed irradiance or illuminance values:
@@ -859,8 +1016,16 @@ want to store precomputed irradiance or illuminance values:
   with the values of the 3 sRGB color matching functions at 3 different
   wavelengths (yielding a 3x3 matrix).</li>
 </ul>
+</details>
+
+
+<details>
+<summary>也就是下面的实现：
+</summary>
 
 <p>This yields the following implementation:
+
+</details>
 */
 
 void Model::Init(unsigned int num_scattering_orders) {
@@ -869,6 +1034,8 @@ void Model::Init(unsigned int num_scattering_orders) {
   // order of scattering (the final precomputed textures store the sum of all
   // the scattering orders). We allocate them here, and destroy them at the end
   // of this method.
+  // 预计算需要的临时纹理，用于存储某阶散射的的贡献，用于计算下一阶散射（最后预计算的纹理保存的所有阶散射的和）。
+  // 我们在这里 allocate 它们，然后在该方法的末尾销毁它们。
   GLuint delta_irradiance_texture = NewTexture2d(
       IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT);
   GLuint delta_rayleigh_scattering_texture = NewTexture3d(
@@ -894,16 +1061,25 @@ void Model::Init(unsigned int num_scattering_orders) {
   // delta_mie_scattering_texture are only needed to compute double scattering.
   // Therefore, to save memory, we can store delta_rayleigh_scattering_texture
   // and delta_multiple_scattering_texture in the same GPU texture.
+
+  // 计算 3 阶以上的散射时才需要 delta_multiple_scattering_texture，而
+  // delta_rayleigh_scattering_texture 和
+  // delta_mie_scattering_texture 只用于计算 二阶 scattering。
+  // 因此，为了节省内存，我们可以在相同的 GPU 纹理中保存
+  // delta_rayleigh_scattering_texture 和
+  // delta_multiple_scattering_texture。
   GLuint delta_multiple_scattering_texture = delta_rayleigh_scattering_texture;
 
   // The precomputations also require a temporary framebuffer object, created
   // here (and destroyed at the end of this method).
+  // 预计算也需要一个临时的 framebuffer object。
   GLuint fbo;
   glGenFramebuffers(1, &fbo);
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
   // The actual precomputations depend on whether we want to store precomputed
   // irradiance or illuminance values.
+  // 真正的预计算取决于我想要存储的是预计算的 irradiance 还是 illuminance 值。
   if (num_precomputed_wavelengths_ <= 3) {
     vec3 lambdas{kLambdaR, kLambdaG, kLambdaB};
     mat3 luminance_from_radiance{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
@@ -975,10 +1151,17 @@ void Model::Init(unsigned int num_scattering_orders) {
 }
 
 /*
+<details>
+<summary><code>SetProgramUniforms</code> 方法是非常直白的：它会绑定预计算的方法到指定的 texture units，
+然后设置用户提供的 program 对应的 uniform 为这些 texture units 的 index。
+</summary>
+
 <p>The <code>SetProgramUniforms</code> method is straightforward: it simply
 binds the precomputed textures to the specified texture units, and then sets
 the corresponding uniforms in the user provided program to the index of these
 texture units.
+
+</details>
 */
 
 void Model::SetProgramUniforms(
@@ -1007,14 +1190,25 @@ void Model::SetProgramUniforms(
     glBindTexture(GL_TEXTURE_3D, optional_single_mie_scattering_texture_);
     glUniform1i(glGetUniformLocation(program, "single_mie_scattering_texture"),
         single_mie_scattering_texture_unit);
+  } else {
+    // glUniform1i(glGetUniformLocation(program, "single_mie_scattering_texture"),
+    //   scattering_texture_unit);
   }
 }
 
 /*
+<details>
+<summary>
+工具方法 <code>ConvertSpectrumToLinearSrgb</code> 是对给定的函数进行一个简单的数值积分（积分步进为 1nm），
+乘上 CIE color matching funtions，然后是矩阵乘法来实现的：
+</summary>
+
 <p>The utility method <code>ConvertSpectrumToLinearSrgb</code> is implemented
 with a simple numerical integration of the given function, times the CIE color
 matching funtions (with an integration step of 1nm), followed by a matrix
 multiplication:
+
+</details>
 */
 
 void Model::ConvertSpectrumToLinearSrgb(
@@ -1040,10 +1234,17 @@ void Model::ConvertSpectrumToLinearSrgb(
 }
 
 /*
+<details>
+<summary>最后，是 <a href="https://hal.inria.fr/inria-00288758/en">paper</a> 中 4.1 节描述的预计算算法。
+每一步都有注释解释。
+</summary>
+
 <p>Finally, we provide the actual implementation of the precomputation algorithm
 described in Algorithm 4.1 of
 <a href="https://hal.inria.fr/inria-00288758/en">our paper</a>. Each step is
 explained by the inline comments below.
+
+</details>
 */
 void Model::Precompute(
     GLuint fbo,
@@ -1083,6 +1284,7 @@ void Model::Precompute(
   glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ONE);
 
   // Compute the transmittance, and store it in transmittance_texture_.
+  // 1. 先算 transmittance，并保存到 transmittance_texture_
   glFramebufferTexture(
       GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, transmittance_texture_, 0);
   glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -1094,6 +1296,10 @@ void Model::Precompute(
   // depending on 'blend', either initialize irradiance_texture_ with zeros or
   // leave it unchanged (we don't want the direct irradiance in
   // irradiance_texture_, but only the irradiance from the sky).
+  // 2. 然后计算 direct irradiance，并保持到 delta_irradiance_texture中，
+  //    并依赖于 'blend' 参数决定是用 0 来初始化 irradiance_texture_ 或不改变原来的值
+  //    （我们不想要在 irradiance_texture_ 中保存来自 sky 的 direct irradiance，
+  //    只想要来自 sky 的 irradiance）。
   glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
       delta_irradiance_texture, 0);
   glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1,
@@ -1109,6 +1315,10 @@ void Model::Precompute(
   // delta_rayleigh_scattering_texture and delta_mie_scattering_texture, and
   // either store them or accumulate them in scattering_texture_ and
   // optional_single_mie_scattering_texture_.
+  // 3. 计算瑞利散射和米氏散射的单次散射，保存到
+  //    delta_rayleigh_scattering_texture(3d) 和 delta_mie_scattering_texture(3d) 中，
+  //    并把他们保存或累加到 scattering_texture_(3d)，
+  //    或者把米氏散射单独存到 optional_single_mie_scattering_texture_(3d) 中
   glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
       delta_rayleigh_scattering_texture, 0);
   glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1,
@@ -1134,11 +1344,14 @@ void Model::Precompute(
   }
 
   // Compute the 2nd, 3rd and 4th order of scattering, in sequence.
+  // 4. 按顺序计算 2 阶、3 阶 和 4 阶的散射
   for (unsigned int scattering_order = 2;
        scattering_order <= num_scattering_orders;
        ++scattering_order) {
     // Compute the scattering density, and store it in
     // delta_scattering_density_texture.
+
+    // 4.1 计算散射密度，保存到 delta_scattering_density_texture(3d)
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
         delta_scattering_density_texture, 0);
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, 0, 0);
@@ -1167,6 +1380,8 @@ void Model::Precompute(
 
     // Compute the indirect irradiance, store it in delta_irradiance_texture and
     // accumulate it in irradiance_texture_.
+
+    // 4.2 计算 indirect irradiance 并保存到 delta_irradiance_texture，并累加到 irradiance_texture_
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
         delta_irradiance_texture, 0);
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1,
@@ -1191,6 +1406,8 @@ void Model::Precompute(
     // Compute the multiple scattering, store it in
     // delta_multiple_scattering_texture, and accumulate it in
     // scattering_texture_.
+
+    // 4.3 计算多次散射，并保存到 delta_multiple_scattering_texture，并累加到 scattering_texture_
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
         delta_multiple_scattering_texture, 0);
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1,

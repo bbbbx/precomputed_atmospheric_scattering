@@ -1738,9 +1738,26 @@ IrradianceSpectrum GetIrradiance(
 /*
 <h3 id="rendering">Rendering</h3>
 
+<details>
+<summary>现在我们可以假设 transmittance, scattering and irradiance 纹理已经预计算好了，然后我们提供
+提供一些函数来使用这些纹理来计算出天空的颜色、空气透视和地面辐射率。
+</summary>
+
 <p>Here we assume that the transmittance, scattering and irradiance textures
 have been precomputed, and we provide functions using them to compute the sky
 color, the aerial perspective, and the ground radiance.
+</details>
+
+<details>
+<summary>更准确地说，我们假设存储在 <code>scattering_texture</code> 的是没有相位函数项的单次瑞利散射，加上多次散射项（
+为了 dimensional homogeneity 除以瑞利相位函数）。我们还假设单次米氏散射是没有存储相位函数项：
+<ul>
+  <li>单独存储在 <code>single_mie_scattering_texture</code>，</li>
+  <li>或者如果定义了 <code>COMBINED_SCATTERING_TEXTURES</code>，则存储在 <code>scattering_texture</code>。
+    其中瑞利和多次散射存储在 RGB 通道，而单次米氏散射的红色分量存储在 alpha 通道。
+  </li>
+</ul>
+</summary>
 
 <p>More precisely, we assume that the single Rayleigh scattering, without its
 phase function term, plus the multiple scattering terms (divided by the Rayleigh
@@ -1759,10 +1776,19 @@ in the RGB channels, and the red component of the single Mie scattering is
 stored in the alpha channel).</li>
 </ul>
 
+</details>
+
+
+<details>
+<summary>在第 2 种情况中，如在 paper 中所述的，单次米氏散射的绿色和蓝色分量使用下列的函数被 extrapolated 计算出来，
+</summary>
+
 <p>In the second case, the green and blue components of the single Mie
 scattering are extrapolated as described in our
 <a href="https://hal.inria.fr/inria-00288758/en">paper</a>, with the following
 function:
+
+</details>
 */
 
 #ifdef COMBINED_SCATTERING_TEXTURES
@@ -1780,6 +1806,13 @@ vec3 GetExtrapolatedSingleMieScattering(
 #endif
 
 /*
+<details>
+<summary>然后，我们可以基于 <a href="#single_scattering_lookup"><code>GetScattering</code></a> 使用以下的
+<strong><code>GetCombinedScattering</code></strong> 函数得到所有散射分量（瑞利 + 多次散射，以及单个米氏散射）
+（我们在这里有一些重复的代码，而不是调用 <code>GetScattering</code> 两次，
+以确保可以在对 <code>scattering_texture</code> 和 <code>single_mie_scattering_texture</code> 进行采样时复用纹理坐标）：
+</summary>
+
 <p>We can then retrieve all the scattering components (Rayleigh + multiple
 scattering on one side, and single Mie scattering on the other side) with the
 following function, based on
@@ -1788,6 +1821,7 @@ some code here, instead of using two calls to <code>GetScattering</code>, to
 make sure that the texture coordinates computation is shared between the lookups
 in <code>scattering_texture</code> and
 <code>single_mie_scattering_texture</code>):
+</details>
 */
 
 IrradianceSpectrum GetCombinedScattering(
@@ -1827,6 +1861,13 @@ IrradianceSpectrum GetCombinedScattering(
 /*
 <h4 id="rendering_sky">Sky</h4>
 
+<details>
+<summary>要渲染天空，我们只需简单地显示 sky 的 radiance，我们可以对预计算的 scattering texture(s) 进行 lookup，
+然后乘以在预计算阶段没计算的相位函数项。我们还可以返回大气的 transmittance（对预计算的 transmittance texture 进行一次 lookup 即可），
+渲染太空中的物体时需要（例如太阳和月亮）。这就导出了下列的函数 <strong><code>GetSkyRadiance</code></strong>，
+其中大部分计算用于正确处理 viewer 位于大气外的情况和 light shafts 的情况：
+</summary>
+
 <p>To render the sky we simply need to display the sky radiance, which we can
 get with a lookup in the precomputed scattering texture(s), multiplied by the
 phase function terms that were omitted during precomputation. We can also return
@@ -1835,6 +1876,8 @@ the precomputed transmittance texture), which is needed to correctly render the
 objects in space (such as the Sun and the Moon). This leads to the following
 function, where most of the computations are used to correctly handle the case
 of viewers outside the atmosphere, and the case of light shafts:
+
+</details>
 */
 
 RadianceSpectrum GetSkyRadiance(
@@ -1906,6 +1949,14 @@ RadianceSpectrum GetSkyRadiance(
 /*
 <h4 id="rendering_aerial_perspective">Aerial perspective</h4>
 
+<details>
+<summary>为了渲染空气透视，我们需要两点之间的 transmittance 和 scattering（即 viewer 和地面某点之间，该点可以位于任意海拔）。
+我们已经有了计算两点之间的 tansmittance 的函数（对只包含到大气顶部的 transmittance 的纹理使用 2 次 lookups ），
+但是我们没有两点之间的 scattering。希望两个点之间的 scattering 可以通过纹理中的两次 lookup 来计算，其中纹理包含了到最近大气边界的 scattering，
+就像 transmittance 一样（只是不像 transmittance 纹理的相除，scattering 纹理要相减）。
+这就是我们在以下函数 <strong><code>GetSkyRadianceToPoint</code></strong> 中实现的（初始计算用于正确处理 viewer 位于大气外的情况）：
+</summary>
+
 <p>To render the aerial perspective we need the transmittance and the scattering
 between two points (i.e. between the viewer and a point on the ground, which can
 at an arbibrary altitude). We already have a function to compute the
@@ -1917,6 +1968,8 @@ the nearest atmosphere boundary, as for the transmittance (except that here the
 two lookup results must be subtracted, instead of divided). This is what we
 implement in the following function (the initial computations are used to
 correctly handle the case of viewers outside the atmosphere):
+
+</details>
 */
 
 RadianceSpectrum GetSkyRadianceToPoint(
@@ -2000,6 +2053,14 @@ RadianceSpectrum GetSkyRadianceToPoint(
 /*
 <h4 id="rendering_ground">Ground</h4>
 
+<details>
+<summary>为了渲染地面，我们需要地面接收到在大气中进行 0 次或多次反弹后的 irradiance。
+direct irradiance 可以通过 <code>GetTransmittanceToSun</code> 在 transmittance 纹理中 lookup 来计算，
+而 indirect irradiance 通过在预计算的 irradiance 纹理中 lookup 来得到
+（此纹理仅包含水平表面的 irradiance；对于其他情况，我们使用我们 paper 中定义的近似值）。
+下面的函数 <strong><code>GetSunAndSkyIrradiance</code></strong> 分别返回 direct irradiance 和 indirect irradiance：
+</summary>
+
 <p>To render the ground we need the irradiance received on the ground after 0 or
 more bounce(s) in the atmosphere or on the ground. The direct irradiance can be
 computed with a lookup in the transmittance texture,
@@ -2008,6 +2069,8 @@ by a lookup in the precomputed irradiance texture (this texture only contains
 the irradiance for horizontal surfaces; we use the approximation defined in our
 <a href="https://hal.inria.fr/inria-00288758/en">paper</a> for the other cases).
 The function below returns the direct and indirect irradiances separately:
+
+</details>
 */
 
 IrradianceSpectrum GetSunAndSkyIrradiance(

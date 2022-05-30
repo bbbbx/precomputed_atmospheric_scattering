@@ -454,6 +454,7 @@ on the ground by the sun and sky visibility factors):
     vec3 normal = normalize(point - earth_center);
 
     // Compute the radiance reflected by the ground.
+    // 计算被地面反射的 radiance。
     vec3 sky_irradiance;
     vec3 sun_irradiance = GetSunAndSkyIrradiance(
         point - earth_center, normal, sun_direction, sky_irradiance);
