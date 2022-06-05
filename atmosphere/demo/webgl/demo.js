@@ -90,6 +90,9 @@ class Demo {
     this.previousMouseX = undefined;
     this.previousMouseY = undefined;
 
+    window.oncontextmenu = () => {
+      return false;
+    }
     rootElement.addEventListener('keypress', (e) => this.onKeyPress(e));
     rootElement.addEventListener('mousedown', (e) => this.onMouseDown(e));
     rootElement.addEventListener('mousemove', (e) => this.onMouseMove(e));

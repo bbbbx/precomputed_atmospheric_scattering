@@ -40,7 +40,8 @@ independent of our atmosphere model. The only part which is related to it is the
 #include "atmosphere/demo/demo.h"
 
 #include <glad/glad.h>
-#include <GL/freeglut.h>
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <cmath>
@@ -49,6 +50,7 @@ independent of our atmosphere model. The only part which is related to it is the
 #include <sstream>
 #include <string>
 #include <vector>
+#include <iostream>
 
 namespace atmosphere {
 namespace demo {
@@ -85,7 +87,7 @@ const char kVertexShader[] = R"(
 
 #include "atmosphere/demo/demo.glsl.inc"
 
-static std::map<int, Demo*> INSTANCES;
+static std::map<GLFWwindow*, Demo*> INSTANCES;
 
 }  // anonymous namespace
 
@@ -114,9 +116,15 @@ Demo::Demo(int viewport_width, int viewport_height) :
     sun_zenith_angle_radians_(1.3),
     sun_azimuth_angle_radians_(2.9),
     exposure_(10.0) {
-  glutInitWindowSize(viewport_width, viewport_height);
-  window_id_ = glutCreateWindow("Atmosphere Demo");
-  INSTANCES[window_id_] = this;
+  glfwWindow = glfwCreateWindow(viewport_width, viewport_height, "Atmosphere Demo", nullptr, nullptr);
+
+  INSTANCES[glfwWindow] = this;
+  if (!glfwWindow) {
+    glfwTerminate();
+    throw std::runtime_error("Create window failed!\n");
+  }
+  glfwMakeContextCurrent(glfwWindow);
+
   if (!gladLoadGL()) {
     throw std::runtime_error("GLAD initialization failed");
   }
@@ -124,23 +132,26 @@ Demo::Demo(int viewport_width, int viewport_height) :
     throw std::runtime_error("OpenGL 3.3 or higher is required");
   }
 
-  glutDisplayFunc([]() {
-    INSTANCES[glutGetWindow()]->HandleRedisplayEvent();
+  glfwSetWindowSizeCallback(glfwWindow, [](GLFWwindow* window, int width, int height) {
+    int w, h;
+    glfwGetFramebufferSize(window, &w, &h);
+    INSTANCES[window]->HandleReshapeEvent(w, h);
   });
-  glutReshapeFunc([](int width, int height) {
-    INSTANCES[glutGetWindow()]->HandleReshapeEvent(width, height);
+
+  glfwSetKeyCallback(glfwWindow, [](GLFWwindow* window, int key, int scancode, int action, int mods) {
+    INSTANCES[window]->HandleKeyboardEvent(key, scancode, action, mods);
   });
-  glutKeyboardFunc([](unsigned char key, int x, int y) {
-    INSTANCES[glutGetWindow()]->HandleKeyboardEvent(key);
+
+  glfwSetMouseButtonCallback(glfwWindow, [](GLFWwindow* window, int button, int action, int mods) {
+    INSTANCES[window]->HandleMouseClickEvent(button, action, mods, 0);
   });
-  glutMouseFunc([](int button, int state, int x, int y) {
-    INSTANCES[glutGetWindow()]->HandleMouseClickEvent(button, state, x, y);
+
+  glfwSetCursorPosCallback(glfwWindow, [](GLFWwindow* window, double xpos, double ypos) {
+    INSTANCES[window]->HandleMouseDragEvent(xpos, ypos);
   });
-  glutMotionFunc([](int x, int y) {
-    INSTANCES[glutGetWindow()]->HandleMouseDragEvent(x, y);
-  });
-  glutMouseWheelFunc([](int button, int dir, int x, int y) {
-    INSTANCES[glutGetWindow()]->HandleMouseWheelEvent(dir);
+
+  glfwSetScrollCallback(glfwWindow, [](GLFWwindow* window, double xoffset, double yoffset) {
+    INSTANCES[window]->HandleMouseWheelEvent(yoffset > 0.0 ? 1 : -1);
   });
 
   glGenVertexArrays(1, &full_screen_quad_vao_);
@@ -175,7 +186,18 @@ Demo::~Demo() {
   glDeleteProgram(program_);
   glDeleteBuffers(1, &full_screen_quad_vbo_);
   glDeleteVertexArrays(1, &full_screen_quad_vao_);
-  INSTANCES.erase(window_id_);
+
+  INSTANCES.erase(glfwWindow);
+  glfwDestroyWindow(glfwWindow);
+  glfwTerminate();
+}
+
+void Demo::Run() {
+  while (!glfwWindowShouldClose(glfwWindow)) {
+    HandleRedisplayEvent();
+    glfwSwapBuffers(glfwWindow);
+    glfwPollEvents();
+  }
 }
 
 /*
@@ -294,6 +316,16 @@ to get the final scene rendering program:
   glShaderSource(vertex_shader_, 1, &vertex_shader_source, NULL);
   glCompileShader(vertex_shader_);
 
+  int success = 0;
+  glGetShaderiv(vertex_shader_, GL_COMPILE_STATUS, &success);
+  if (!success) {
+    int len = 0;
+    glGetShaderiv(vertex_shader_, GL_INFO_LOG_LENGTH, &len);
+    char info_log[len+1];
+    glGetShaderInfoLog(vertex_shader_, len, &len, info_log);
+    std::cerr << "Compile Vertex Shader failed:\n" << info_log << std::endl;
+  }
+
   const std::string fragment_shader_str =
       "#version 330\n" +
       std::string(use_luminance_ != NONE ? "#define USE_LUMINANCE\n" : "") +
@@ -305,6 +337,15 @@ to get the final scene rendering program:
   glShaderSource(fragment_shader_, 1, &fragment_shader_source, NULL);
   glCompileShader(fragment_shader_);
 
+  glGetShaderiv(fragment_shader_, GL_COMPILE_STATUS, &success);
+  if (!success) {
+    int len = 0;
+    glGetShaderiv(fragment_shader_, GL_INFO_LOG_LENGTH, &len);
+    char info_log[len+1];
+    glGetShaderInfoLog(fragment_shader_, len, &len, info_log);
+    std::cerr << "Compile Fragment Shader failed:\n" << info_log << std::endl;
+  }
+
   if (program_ != 0) {
     glDeleteProgram(program_);
   }
@@ -313,6 +354,16 @@ to get the final scene rendering program:
   glAttachShader(program_, fragment_shader_);
   glAttachShader(program_, model_->shader());
   glLinkProgram(program_);
+
+  glGetProgramiv(program_, GL_LINK_STATUS, &success);
+  if (!success) {
+    int len = 0;
+    glGetProgramiv(program_, GL_INFO_LOG_LENGTH, &len);
+    GLchar info_log[len+1];
+    glGetProgramInfoLog(program_, len, &len, info_log);
+    std::cerr << "Link Program failed:\n\t" << info_log << std::endl;
+  }
+
   glDetachShader(program_, vertex_shader_);
   glDetachShader(program_, fragment_shader_);
   glDetachShader(program_, model_->shader());
@@ -345,7 +396,9 @@ because our demo app does not have any texture of its own):
       cos(kSunAngularRadius));
 
   // This sets 'view_from_clip', which only depends on the window size.
-  HandleReshapeEvent(glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));
+  int width, height;
+  glfwGetFramebufferSize(glfwWindow, &width, &height);
+  HandleReshapeEvent(width, height);
 }
 
 /*
@@ -415,8 +468,8 @@ void Demo::HandleRedisplayEvent() const {
     text_renderer_->DrawText(help.str(), 5, 4);
   }
 
-  glutSwapBuffers();
-  glutPostRedisplay();
+  // glutSwapBuffers();
+  // glutPostRedisplay();
 }
 
 /*
@@ -443,28 +496,31 @@ void Demo::HandleReshapeEvent(int viewport_width, int viewport_height) {
       view_from_clip);
 }
 
-void Demo::HandleKeyboardEvent(unsigned char key) {
+void Demo::HandleKeyboardEvent(int key, int scancode, int action, int mods) {
+  is_ctrl_key_pressed_ = mods == GLFW_MOD_CONTROL && action == GLFW_PRESS;
+  if (action != GLFW_RELEASE) return;
+
   if (key == 27) {
-    glutDestroyWindow(window_id_);
-  } else if (key == 'h') {
+    // glutDestroyWindow(window_id_);
+  } else if (key == GLFW_KEY_H) {
     show_help_ = !show_help_;
-  } else if (key == 's') {
+  } else if (key == GLFW_KEY_S) {
     use_constant_solar_spectrum_ = !use_constant_solar_spectrum_;
-  } else if (key == 'o') {
+  } else if (key == GLFW_KEY_O) {
     use_ozone_ = !use_ozone_;
-  } else if (key == 't') {
+  } else if (key == GLFW_KEY_T) {
     use_combined_textures_ = !use_combined_textures_;
-  } else if (key == 'p') {
+  } else if (key == GLFW_KEY_P) {
     use_half_precision_ = !use_half_precision_;
-  } else if (key == 'l') {
+  } else if (key == GLFW_KEY_L) {
     switch (use_luminance_) {
       case NONE: use_luminance_ = APPROXIMATE; break;
       case APPROXIMATE: use_luminance_ = PRECOMPUTED; break;
       case PRECOMPUTED: use_luminance_ = NONE; break;
     }
-  } else if (key == 'w') {
+  } else if (key == GLFW_KEY_W) {
     do_white_balance_ = !do_white_balance_;
-  } else if (key == '+') {
+  } else if (key == '+' || (key == '=' && mods == GLFW_MOD_SHIFT)) {
     exposure_ *= 1.1;
   } else if (key == '-') {
     exposure_ /= 1.1;
@@ -487,38 +543,42 @@ void Demo::HandleKeyboardEvent(unsigned char key) {
   } else if (key == '9') {
     SetView(1.2e7, 0.0, 0.0, 0.93, -2.0, 10.0);
   }
-  if (key == 's' || key == 'o' || key == 't' || key == 'p' || key == 'l' ||
-      key == 'w') {
+  if (key == GLFW_KEY_S || key == GLFW_KEY_O || key == GLFW_KEY_T || key == GLFW_KEY_P || key == GLFW_KEY_L ||
+      key == GLFW_KEY_W) {
     InitModel();
   }
 }
 
-void Demo::HandleMouseClickEvent(
-    int button, int state, int mouse_x, int mouse_y) {
-  previous_mouse_x_ = mouse_x;
-  previous_mouse_y_ = mouse_y;
-  is_ctrl_key_pressed_ = (glutGetModifiers() & GLUT_ACTIVE_CTRL) != 0;
+bool is_mouse_left_pressed = false;
 
-  if ((button == 3) || (button == 4)) {
-    if (state == GLUT_DOWN) {
-      HandleMouseWheelEvent(button == 3 ? 1 : -1);
-    }
-  }
+void Demo::HandleMouseClickEvent(
+    int button, int state /*action*/, int mouse_x /*mods*/, int mouse_y) {
+//   previous_mouse_x_ = mouse_x;
+//   previous_mouse_y_ = mouse_y;
+//   is_ctrl_key_pressed_ = (glutGetModifiers() & GLUT_ACTIVE_CTRL) != 0;
+  is_mouse_left_pressed = button == GLFW_MOUSE_BUTTON_LEFT && state == GLFW_PRESS;
+
+//   if ((button == 3) || (button == 4)) {
+//     if (state == GLUT_DOWN) {
+//       HandleMouseWheelEvent(button == 3 ? 1 : -1);
+//     }
+//   }
 }
 
 void Demo::HandleMouseDragEvent(int mouse_x, int mouse_y) {
   constexpr double kScale = 500.0;
-  if (is_ctrl_key_pressed_) {
-    sun_zenith_angle_radians_ -= (previous_mouse_y_ - mouse_y) / kScale;
-    sun_zenith_angle_radians_ =
-        std::max(0.0, std::min(kPi, sun_zenith_angle_radians_));
-    sun_azimuth_angle_radians_ += (previous_mouse_x_ - mouse_x) / kScale;
-  } else {
-    view_zenith_angle_radians_ += (previous_mouse_y_ - mouse_y) / kScale;
-    view_zenith_angle_radians_ =
-        std::max(0.0, std::min(kPi / 2.0, view_zenith_angle_radians_));
-    view_azimuth_angle_radians_ += (previous_mouse_x_ - mouse_x) / kScale;
-  }
+  if (is_mouse_left_pressed)
+    if (is_ctrl_key_pressed_) {
+      sun_zenith_angle_radians_ -= (previous_mouse_y_ - mouse_y) / kScale;
+      sun_zenith_angle_radians_ =
+          std::max(0.0, std::min(kPi, sun_zenith_angle_radians_));
+      sun_azimuth_angle_radians_ += (previous_mouse_x_ - mouse_x) / kScale;
+    } else {
+      view_zenith_angle_radians_ += (previous_mouse_y_ - mouse_y) / kScale;
+      view_zenith_angle_radians_ =
+          std::max(0.0, std::min(kPi / 2.0, view_zenith_angle_radians_));
+      view_azimuth_angle_radians_ += (previous_mouse_x_ - mouse_x) / kScale;
+    }
   previous_mouse_x_ = mouse_x;
   previous_mouse_y_ = mouse_y;
 }

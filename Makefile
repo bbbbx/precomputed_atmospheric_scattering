@@ -26,11 +26,13 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+# Install glfw3: brew install glfw
+BREW_PREFIX = $(shell brew --prefix)
 GPP := g++
 GPP_FLAGS := -Wall -Wmain -pedantic -pedantic-errors -std=c++11
 INCLUDE_FLAGS := \
     -I. -Iexternal -Iexternal/dimensional_types -Iexternal/glad/include \
-    -Iexternal/progress_bar
+    -Iexternal/progress_bar -I$(BREW_PREFIX)/include
 DEBUG_FLAGS := -g
 RELEASE_FLAGS := -DNDEBUG -O3 -fexpensive-optimizations
 
@@ -109,7 +111,7 @@ output/Release/atmosphere_integration_test: \
     output/Release/external/dimensional_types/test/test_main.o \
     output/Release/external/glad/src/glad.o \
     output/Release/external/progress_bar/util/progress_bar.o
-	$(GPP) $^ -pthread -ldl -lglut -lGL -o $@
+	$(GPP) $^ -pthread -ldl -L$(BREW_PREFIX)/lib/ -lglfw -lglut -lGL -o $@
 
 output/Debug/precompute: \
     output/Debug/atmosphere/demo/demo.o \
@@ -117,7 +119,7 @@ output/Debug/precompute: \
     output/Debug/atmosphere/model.o \
     output/Debug/text/text_renderer.o \
     output/Debug/external/glad/src/glad.o
-	$(GPP) $^ -pthread -ldl -lglut -lGL -o $@
+	$(GPP) $^ -pthread -ldl -L$(BREW_PREFIX)/lib/ -lglfw -lglut -lGL -o $@
 
 output/Debug/atmosphere_demo: \
     output/Debug/atmosphere/demo/demo.o \
@@ -125,7 +127,7 @@ output/Debug/atmosphere_demo: \
     output/Debug/atmosphere/model.o \
     output/Debug/text/text_renderer.o \
     output/Debug/external/glad/src/glad.o
-	$(GPP) $^ -pthread -ldl -lglut -lGL -o $@
+	$(GPP) $^ -pthread -ldl -L$(BREW_PREFIX)/lib/ -lglfw -o $@
 
 output/Debug/%.o: %.cc
 	mkdir -p $(@D)
@@ -147,6 +149,7 @@ output/Release/atmosphere/reference/model_test.o: \
 output/Debug/atmosphere/demo/demo.o output/Release/atmosphere/demo/demo.o: \
     atmosphere/demo/demo.glsl.inc
 
+# Install gnu-sed: brew install gnu-sed
 %.glsl.inc: %.glsl
 	sed -e '1i const char $(*F)_glsl[] = R"***(' -e '$$a )***";' \
 	    -e '/^\/\*/,/\*\/$$/d' -e '/^ *\/\//d' -e '/^$$/d' $< > $@

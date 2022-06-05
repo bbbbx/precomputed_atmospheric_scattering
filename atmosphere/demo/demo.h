@@ -40,6 +40,8 @@ to render the scene and the help messages:
 #ifndef ATMOSPHERE_DEMO_DEMO_H_
 #define ATMOSPHERE_DEMO_DEMO_H_
 
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 #include <glad/glad.h>
 
 #include <memory>
@@ -55,6 +57,7 @@ class Demo {
   Demo(int viewport_width, int viewport_height);
   ~Demo();
 
+  void Run();
   const Model& model() const { return *model_; }
   const GLuint vertex_shader() const { return vertex_shader_; }
   const GLuint fragment_shader() const { return fragment_shader_; }
@@ -79,7 +82,7 @@ class Demo {
   void InitModel();
   void HandleRedisplayEvent() const;
   void HandleReshapeEvent(int viewport_width, int viewport_height);
-  void HandleKeyboardEvent(unsigned char key);
+  void HandleKeyboardEvent(int key, int scancode, int action, int mods);
   void HandleMouseClickEvent(int button, int state, int mouse_x, int mouse_y);
   void HandleMouseDragEvent(int mouse_x, int mouse_y);
   void HandleMouseWheelEvent(int mouse_wheel_direction);
@@ -102,7 +105,8 @@ class Demo {
   GLuint full_screen_quad_vao_;
   GLuint full_screen_quad_vbo_;
   std::unique_ptr<TextRenderer> text_renderer_;
-  int window_id_;
+  // int window_id_;
+  GLFWwindow* glfwWindow;
 
   double view_distance_meters_;
   double view_zenith_angle_radians_;

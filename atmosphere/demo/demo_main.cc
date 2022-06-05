@@ -36,20 +36,29 @@ application.
 #include "atmosphere/demo/demo.h"
 
 #include <glad/glad.h>
-#include <GL/freeglut.h>
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 
 #include <memory>
+#include <iostream>
 
 using atmosphere::demo::Demo;
 
 int main(int argc, char** argv) {
-  glutInitContextVersion(3, 3);
-  glutInitContextProfile(GLUT_CORE_PROFILE);
-  glutInit(&argc, argv);
-  glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE);
-  glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_CONTINUE_EXECUTION);
+  if (!glfwInit()) {
+    throw std::runtime_error("GLFW init failed!\n");
+  }
+
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#if defined(__APPLE__)
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+  glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
+#endif
 
   std::unique_ptr<Demo> demo(new Demo(1024, 576));
-  glutMainLoop();
+  demo.get()->Run();
+
   return 0;
 }

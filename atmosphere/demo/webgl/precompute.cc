@@ -36,8 +36,9 @@ textures and creates the shaders), its shaders and textures are read back using
 the OpenGL API, and are saved to disk:
 */
 
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 #include <glad/glad.h>
-#include <GL/freeglut.h>
 
 #include <memory>
 #include <fstream>
@@ -73,14 +74,25 @@ void SaveTexture(const GLenum texture_unit, const GLenum texture_target,
 }
 
 int main(int argc, char** argv) {
-  glutInitContextVersion(3, 3);
-  glutInitContextProfile(GLUT_CORE_PROFILE);
-  glutInit(&argc, argv);
-  glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE);
+  if (!glfwInit()) {
+    throw std::runtime_error("GLFW init failed!\n");
+  }
 
-  std::unique_ptr<Demo> demo(new Demo(0, 0));
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#if defined(__APPLE__)
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+  glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GL_TRUE);
+#endif
+
+  std::unique_ptr<Demo> demo(new Demo(1, 1));
   demo->model().SetProgramUniforms(demo->program(), 0, 1, 2);
 
+  if (argv[1] == nullptr) {
+    printf("Missing output dir.\nUsage: precompute <dir>\n");
+    return 0;
+  }
   const std::string output_dir(argv[1]);
   SaveShader(demo->model().shader(), output_dir + "atmosphere_shader.txt");
   SaveShader(demo->vertex_shader(), output_dir + "vertex_shader.txt");

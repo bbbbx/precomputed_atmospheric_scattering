@@ -62,7 +62,8 @@ model definitions:
 #include "atmosphere/reference/model.h"
 
 #include <glad/glad.h>
-#include <GL/freeglut.h>
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 
 #include <array>
 #include <fstream>
@@ -179,6 +180,8 @@ typedef std::unique_ptr<unsigned int[]> Image;
 const char kOutputDir[] = "output/Doc/atmosphere/reference/";
 constexpr unsigned int kWidth = 640;
 constexpr unsigned int kHeight = 360;
+
+GLFWwindow* glfwWindow = NULL;
 
 void WritePngArgb(const std::string& name, void* pixels) {
   write_png((std::string(kOutputDir) + name).c_str(), pixels, kWidth, kHeight);
@@ -361,22 +364,30 @@ provide a separate method to initialize it:
 */
 
   void InitGpuModel(bool combine_textures, bool precomputed_luminance) {
-    if (!glutGet(GLUT_INIT_STATE)) {
-      int argc = 0;
-      char** argv = nullptr;
-      glutInitContextVersion(3, 3);
-      glutInitContextProfile(GLUT_CORE_PROFILE);
-      glutInit(&argc, argv);
-      glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE);
-      glutInitWindowSize(kWidth, kHeight);
-      glutCreateWindow("ModelTest");
-      glutHideWindow();
+    if (glfwWindow == NULL) {
+      if (!glfwInit()) {
+        throw std::runtime_error("GLFW init failed!\n");
+      }
+
+      glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+      glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+      glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    #if defined(__APPLE__)
+      glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+      glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GL_TRUE);
+    #endif
+
+      glfwWindow = glfwCreateWindow(kWidth, kHeight, "ModelTest", nullptr, nullptr);
+      glfwMakeContextCurrent(glfwWindow);
+
       if (!gladLoadGL()) {
         throw std::runtime_error("GLAD initialization failed");
       }
       if (!GLAD_GL_VERSION_3_3) {
         throw std::runtime_error("OpenGL 3.3 or higher is required");
       }
+
+      glfwHideWindow(glfwWindow);
     }
 
     std::vector<double> wavelengths;
@@ -412,7 +423,7 @@ provide a separate method to initialize it:
         combine_textures,
         true /* half_precision */));
     model_->Init();
-    glutSwapBuffers();
+    glfwSwapBuffers(glfwWindow);
   }
 
 /*
@@ -598,7 +609,12 @@ with the GPU program, and then read back the framebuffer pixels.
       glBindVertexArray(0);
       glDeleteVertexArrays(1, &full_screen_quad_vao);
     }
-    glutSwapBuffers();
+    // Can't swap buffers here, cause need to read (BACK)buffer's pixels.
+    // For the default framebuffer, the initial setting
+    // for ReadBuffer is FRONT if there is no back buffer and BACK otherwise.
+    // glfwSwapBuffers(glfwWindow);
+    // glutSwapBuffers();
+
 
     std::unique_ptr<unsigned char[]> gl_pixels(
         new unsigned char[4 * kWidth * kHeight]);

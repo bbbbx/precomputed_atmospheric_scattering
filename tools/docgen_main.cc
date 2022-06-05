@@ -31,6 +31,7 @@
 #include <iostream>
 #include <regex>
 #include <string>
+#include <sstream>
 
 namespace {
 
